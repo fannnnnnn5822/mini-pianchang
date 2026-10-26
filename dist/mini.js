@@ -30,7 +30,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
   var GRID = G.MINI_GRID || (typeof MINI_GRID !== 'undefined' ? MINI_GRID : null);
   var V = (typeof MINI_VARIANT !== 'undefined' && MINI_VARIANT === '女性向') ? '女性向' : '男性向';
   var FEM = V === '女性向';
-  var VERSION = '0.1.0';
+  var VERSION = '0.1.1';
   var NAME = 'Mini 声色片场', SUBNAME = FEM ? 'LENS & LUST' : 'CUT & CUM';
   var NS = FEM ? 'minipc-f' : 'minipc-m';
   var FAB_ID = NS + '-fab', PANEL_ID = NS + '-panel', PSTYLE_ID = NS + '-style';
@@ -317,7 +317,18 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
     return t;
   }
   var REFUSE_RE = /PROHIBITED|blocked|block_?reason|SAFETY|no candidate|content.?filter|refus|拒绝|被拦/i;
-  function genRaw(cfg) { return Promise.resolve().then(function () { return generateRaw(withApi(cfg, llmApi())); }); }
+  function genRaw(cfg, room) { return Promise.resolve().then(function () { return generateRaw(room ? withRoom(cfg) : withApi(cfg, llmApi())); }); }
+  // 扩写的回复长度（10-26 玩家报 4a「格式不对」＝写到一半被截断：会思考的模型把预设的最大回复长度用掉一大半）
+  //   预设里的最大回复长度不到 8192，这一次请求调到 8192；跟正文走时只改长度（custom_api 不填地址＝用酒馆当前的源），不是聊天补全就不碰
+  var EXPAND_TOKENS = 8192;
+  function presetTokens() {
+    try { var c = SillyTavern.getContext(); return { chat: c.mainApi === 'openai', n: Number(c.chatCompletionSettings && c.chatCompletionSettings.openai_max_tokens) || 0 }; } catch (e) { return { chat: false, n: 0 }; }
+  }
+  function withRoom(cfg) {
+    var api = llmApi(), p = presetTokens();
+    if (p.n >= EXPAND_TOKENS || (!api && !p.chat)) return withApi(cfg, api);
+    return withApi(cfg, Object.assign({}, api || {}, { max_tokens: EXPAND_TOKENS }));
+  }
 
   // ═════════════════════════ 联机：剧本广场（Supabase，表 / 函数 mini_*，见 服务器建表-Mini.sql）═════════════════════════
   // 照声色片场 online.js：匿名 token、rpc 封装、连不上退回单机、reason 码翻成人话。联机的报错一律接住，不往外抛
@@ -886,24 +897,35 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
     d.err = r.err || ''; d.card = r.card || null; UI.gen.err = '';
     render();
   }
-  async function expandRec(f) {
+  // o.recId：从剧本夹里扩写的那一条（写到一半断了，半截放进「改一改」时改的是它）
+  async function expandRec(f, o) {
+    o = o || {};
     if (UI.gen.busy) return null;
     UI.gen.busy = true; UI.gen.err = ''; render();
+    var half = null;
     try {
       var last = '';
       for (var attempt = 0; attempt < 2; attempt++) {
         var p = expandAsk(f, attempt ? EXPAND_RETRY : ''), raw = '';
         try {
           raw = String(rawText(await genRaw({ user_input: p.user, should_silence: true, max_chat_history: 0,
-            ordered_prompts: [{ role: 'system', content: LEAD_NOTE }, { role: 'system', content: p.sys }], generation_id: NS + '-x-' + Date.now().toString(36) + attempt })) || '');
+            ordered_prompts: [{ role: 'system', content: LEAD_NOTE }, { role: 'system', content: p.sys }], generation_id: NS + '-x-' + Date.now().toString(36) + attempt }, true)) || '');
         } catch (e) { last = errMsg(e); if (/429|too many/i.test(last)) break; continue; }
-        var g = parseBody(raw);
-        if (g['片名'] && (g['第一幕'] || g['第二幕']) && g['身份']) {
-          ['题材', '档位', '阵容', '作品'].forEach(function (k) { if (f[k]) g[k] = f[k]; });   // 这几格以抽卡单为准
-          if (!g['XP'] && f['XP']) g['XP'] = f['XP'];
-          return g;
-        }
-        last = raw.trim() ? '写回来的格式不对' : '回来是空的';
+        var g0 = parseBody(raw), g = Object.assign({}, g0);
+        ['题材', '档位', '阵容', '作品'].forEach(function (k) { if (f[k]) g[k] = f[k]; });   // 这几格以抽卡单为准
+        if (!g['XP'] && f['XP']) g['XP'] = f['XP'];
+        if (g['片名'] && (g['第一幕'] || g['第二幕']) && g['身份']) return g;
+        try { console.warn('[' + NAME + '] 扩写回来的原文（第 ' + (attempt + 1) + ' 次）：\n' + raw); } catch (e) {}
+        if (!raw.trim()) { last = '回来是空的'; continue; }
+        var got = KEYS.filter(function (k) { return ['题材', '档位', '阵容', '作品'].indexOf(k) < 0 && g0[k]; }).length;
+        if (got && (!half || got > half.got)) half = { got: got, f: g };
+        last = got ? '' : '写回来的不是剧本格式，开头是「' + clip(raw, 40) + '」';
+      }
+      if (half) {   // 写到一半断了：写出来的那部分 + 抽卡单剩下的格子放进「改一改」，补完能存
+        var h = Object.assign({}, f, half.f); if (!h['片名']) h['片名'] = autoTitle(f);
+        var tail = ['第一幕', '第二幕', '第三幕', '台词'].filter(function (k) { return !h[k]; }).map(function (k) { return '\n' + k + '：'; }).join('');
+        openEdit(Object.assign({ text: fmtBody(h) + tail, err: 'AI 扩写写到一半断了，多半是回复长度不够：写出来的部分在这里，补完点「存进剧本夹」。常这样的话，酒馆预设里把「最大回复长度」调大，或者 ⚙ 里给扩写单独配一个 API。' }, o.recId ? { recId: o.recId } : {}));
+        return null;
       }
       UI.gen.err = 'AI 扩写没成：' + (REFUSE_RE.test(last) ? '模型拒了（' + clip(last, 60) + '）。换个档位或者设置里换个模型试试。' : clip(last, 80));
       return null;
@@ -1176,7 +1198,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
       case 'l-edit': { var r4 = libGet(id); if (r4) openEdit({ recId: id, text: fmtBody(r4.f) }); return; }
       case 'l-ai': {
         var r5 = libGet(id); if (!r5) return;
-        var g2 = await expandRec(r5.f);
+        var g2 = await expandRec(r5.f, { recId: id });
         if (g2) { await libPut(Object.assign({}, r5, { f: g2, src: 'ai', at: Date.now(), posted: null })); render(); toast('success', '扩写好了：《' + g2['片名'] + '》'); }
         return;
       }
