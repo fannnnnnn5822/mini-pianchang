@@ -30,7 +30,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
   var GRID = G.MINI_GRID || (typeof MINI_GRID !== 'undefined' ? MINI_GRID : null);
   var V = (typeof MINI_VARIANT !== 'undefined' && MINI_VARIANT === '女性向') ? '女性向' : '男性向';
   var FEM = V === '女性向';
-  var VERSION = '0.1.1';
+  var VERSION = '0.1.2';
   var NAME = 'Mini 声色片场', SUBNAME = FEM ? 'LENS & LUST' : 'CUT & CUM';
   var NS = FEM ? 'minipc-f' : 'minipc-m';
   var FAB_ID = NS + '-fab', PANEL_ID = NS + '-panel', PSTYLE_ID = NS + '-style';
@@ -165,8 +165,27 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
   // 一行一项「键：值」。抽卡单只有前几行；扩写和自己写的多三幕和台词
   var KEYS = ['片名', '题材', '档位', '阵容', '作品', '身份', '场景', '道具', 'XP', '转折', '由头', '第一幕', '第二幕', '第三幕', '台词'];
   var KEY_RE = new RegExp('^[#*>\\-\\s【\\[]*(' + KEYS.join('|') + ')[】\\]*\\s]*[：:]\\s*(.*)$');
+  // 有的模型（10-26 玩家的 4a）不照「键：值」写，回一个 JSON：{"片名":"《…》","题材":…,"台词":["…"]}；按键读出来换成一行一项。断在半截的 JSON，读得到几个键算几个
+  function jsonLines(t) {
+    var s = String(t || '').replace(/^\s*```[a-z]*\s*/i, '');
+    if (!/^\s*[\[{]/.test(s) || !/"(片名|身份|第一幕)"\s*:/.test(s)) return null;
+    var out = [];
+    KEYS.forEach(function (k) {
+      var m = s.match(new RegExp('"' + k + '"\\s*:\\s*(?:"((?:[^"\\\\]|\\\\.)*)"|\\[([\\s\\S]*?)\\])')), v;
+      if (!m) return;
+      if (m[1] != null) { try { v = JSON.parse('"' + m[1] + '"'); } catch (e) { v = m[1]; } }
+      else {
+        v = (m[2].match(/"((?:[^"\\]|\\.)*)"/g) || []).map(function (x) { try { return JSON.parse(x); } catch (e) { return x.slice(1, -1); } });
+        v = k === '台词' ? v.map(function (x) { return /^「/.test(x) ? x : '「' + x + '」'; }).join('') : v.join('、');
+      }
+      v = String(v).replace(/\s*\n+\s*/g, ' ').trim();
+      if (v) out.push(k + '：' + v);
+    });
+    return out.length ? out.join('\n') : null;
+  }
   function parseBody(t) {
-    var f = {}, last = null;
+    var f = {}, last = null, js = jsonLines(t);
+    if (js) t = js;
     String(t || '').replace(/\r/g, '').split('\n').forEach(function (ln) {
       var s = ln.trim(); if (!s || /^```/.test(s)) return;
       var m = s.match(KEY_RE);
@@ -225,7 +244,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
   var EXPAND_TONE = FEM
     ? '这是女性向的小剧本。镜头跟着他：他在戏里的克制和失控、侵略和珍视，低声的话、看人的眼神、手指的动作；写她被照顾、被逼近、被偏爱的感觉。两个人一推一拉：谁先破功，是他在逗她，还是她在引他失控。第一幕立住身份和权力差，第二幕借转折让防线松动，第三幕按档位走到最深的那一步。'
     : '这是男性向的小剧本。镜头多给穿着戏服的她：衣服怎么裹着身体、身段和身份的反差、又羞又想要的表情、声音一点点变调。第一幕立住身份反差和试探，第二幕借转折撕开矜持、贴近身体，第三幕按档位走到最亲密或者最彻底的那一步。台词带钩子，有呼吸。';
-  var EXPAND_FMT = '照下面的格式写，一行一项，全文 400 字以内，不加别的说明：\n' +
+  var EXPAND_FMT = '照下面的格式写成纯文本，一行一项「名字：内容」，不加别的说明：\n' +
     '片名：《四到十个字》\n题材：\n档位：\n阵容：\n身份：他演……× 她演……\n场景：（在哪儿演；用家里现成的东西布置也算）\n道具：（戏服和道具；重口档把两个人约好的停下来的暗号也写在这里）\nXP：（照抽卡单，写进戏里）\n由头：（为什么今晚玩这个）\n' +
     '第一幕：\n第二幕：\n第三幕：\n台词：「……」「……」「……」（三句，演的时候用得上）';
   function expandAsk(f, note) {
@@ -234,7 +253,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
       '抽卡单上的格子故意不配套，能用的都用上，实在不搭的可以换成更顺的。照作品 cosplay 时，挑原作里本来就成年的角色。\n' + EXPAND_TONE + '\n档位「' + f['档位'] + '」：' + (TIER_NOTE[f['档位']] || '') + '\n\n' + EXPAND_FMT;
     return { sys: sys, user: '抽卡单：\n' + card + (note ? '\n\n' + note : '') };
   }
-  var EXPAND_RETRY = '上一版格式不对。这次从「片名：」那一行开始，一行一项，十三行都要有，第一幕到第三幕各一两句。';
+  var EXPAND_RETRY = '上一版格式不对。这次从「片名：」那一行开始写纯文本，一行一项「名字：内容」，十三行都要有。';
 
   // 正文注入（10-26 4a 起稿，改成引导型）
   function who() { return '陪{{user}}演的，是眼下离{{user}}最近、正在跟{{user}}说话的那一位（下面叫「ta」）'; }
@@ -317,18 +336,8 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
     return t;
   }
   var REFUSE_RE = /PROHIBITED|blocked|block_?reason|SAFETY|no candidate|content.?filter|refus|拒绝|被拦/i;
-  function genRaw(cfg, room) { return Promise.resolve().then(function () { return generateRaw(room ? withRoom(cfg) : withApi(cfg, llmApi())); }); }
-  // 扩写的回复长度（10-26 玩家报 4a「格式不对」＝写到一半被截断：会思考的模型把预设的最大回复长度用掉一大半）
-  //   预设里的最大回复长度不到 8192，这一次请求调到 8192；跟正文走时只改长度（custom_api 不填地址＝用酒馆当前的源），不是聊天补全就不碰
-  var EXPAND_TOKENS = 8192;
-  function presetTokens() {
-    try { var c = SillyTavern.getContext(); return { chat: c.mainApi === 'openai', n: Number(c.chatCompletionSettings && c.chatCompletionSettings.openai_max_tokens) || 0 }; } catch (e) { return { chat: false, n: 0 }; }
-  }
-  function withRoom(cfg) {
-    var api = llmApi(), p = presetTokens();
-    if (p.n >= EXPAND_TOKENS || (!api && !p.chat)) return withApi(cfg, api);
-    return withApi(cfg, Object.assign({}, api || {}, { max_tokens: EXPAND_TOKENS }));
-  }
+  // 回复长度不管（10-26 Fan：玩家的 API 大多按次数算钱，一次写长不多花钱）：照玩家自己预设里的，脚本不加长度上限
+  function genRaw(cfg) { return Promise.resolve().then(function () { return generateRaw(withApi(cfg, llmApi())); }); }
 
   // ═════════════════════════ 联机：剧本广场（Supabase，表 / 函数 mini_*，见 服务器建表-Mini.sql）═════════════════════════
   // 照声色片场 online.js：匿名 token、rpc 封装、连不上退回单机、reason 码翻成人话。联机的报错一律接住，不往外抛
@@ -909,7 +918,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
         var p = expandAsk(f, attempt ? EXPAND_RETRY : ''), raw = '';
         try {
           raw = String(rawText(await genRaw({ user_input: p.user, should_silence: true, max_chat_history: 0,
-            ordered_prompts: [{ role: 'system', content: LEAD_NOTE }, { role: 'system', content: p.sys }], generation_id: NS + '-x-' + Date.now().toString(36) + attempt }, true)) || '');
+            ordered_prompts: [{ role: 'system', content: LEAD_NOTE }, { role: 'system', content: p.sys }], generation_id: NS + '-x-' + Date.now().toString(36) + attempt })) || '');
         } catch (e) { last = errMsg(e); if (/429|too many/i.test(last)) break; continue; }
         var g0 = parseBody(raw), g = Object.assign({}, g0);
         ['题材', '档位', '阵容', '作品'].forEach(function (k) { if (f[k]) g[k] = f[k]; });   // 这几格以抽卡单为准
