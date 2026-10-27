@@ -30,7 +30,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
   var GRID = G.MINI_GRID || (typeof MINI_GRID !== 'undefined' ? MINI_GRID : null);
   var V = (typeof MINI_VARIANT !== 'undefined' && MINI_VARIANT === '女性向') ? '女性向' : '男性向';
   var FEM = V === '女性向';
-  var VERSION = '0.1.2';
+  var VERSION = '0.1.3';
   var NAME = 'Mini 声色片场', SUBNAME = FEM ? 'LENS & LUST' : 'CUT & CUM';
   var NS = FEM ? 'minipc-f' : 'minipc-m';
   var FAB_ID = NS + '-fab', PANEL_ID = NS + '-panel', PSTYLE_ID = NS + '-style';
@@ -261,7 +261,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
     var keys = ['片名', '题材', '阵容', '作品', '身份', '场景', '道具', 'XP', '转折', '第一幕', '第二幕', '第三幕', '台词'];
     return keys.filter(function (k) { return f[k]; }).map(function (k) { return k + '：' + (k === '片名' ? '《' + f[k] + '》' : f[k]); }).join('\n');
   }
-  var ACT_DEF = ['', '开场：把身份立住，试探对方接不接得住戏。', '把转折抖出来，气氛一下子变了，亲密往上走一格。', '按档位走到最亲密的那一步，演完这一出。'];
+  var ACT_DEF = ['', '开场：把身份立住，试探对方接不接得住戏。', '把转折抖出来，气氛一下子变了，亲密往上走一格。', '按档位走到最亲密的那一步；演到哪儿停由{{user}}说了算，别自己收尾出戏。'];
   function actLine(st) {
     var f = st.f, n = st.act || 1, nm = ['', '第一幕', '第二幕', '第三幕'][Math.min(3, n)];
     var txt = f[nm] || (n === 2 && f['转折'] ? '转折：' + f['转折'] + '。' + ACT_DEF[2] : ACT_DEF[Math.min(3, n)]);
@@ -292,7 +292,8 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
     return head + lead + actLine(st) + '\n演法：\n' + CRAFT + '\n' + LENS;
   }
   function wrapText(f) {
-    return '【' + NAME + ' · 收工】《' + (f['片名'] || '小剧场') + '》演完了。这一条从戏里出来：脱下或解开充当戏服、道具的东西，收拾弄乱的地方，喘口气；两个人带着刚出戏的劲儿小声回味，笑话对方哪句台词念得太真、哪个反应可爱。然后自然地回到原来的故事；之前要是当平行番外演的，就带着这点余温接回去。';
+    // v0.1.3（10-27 凌keke「收工班味太重」）：不再安排卸道具、收拾、复盘，只说戏到这儿，怎么出戏 ta 自己来
+    return '【' + NAME + ' · 结束】《' + (f['片名'] || '小剧场') + '》就演到这里。这一条 ta 自然地从角色里出来，回到原来的故事；之前要是当平行番外演的，就接回原来的故事。';
   }
 
   // ═════════════════════════ 调模型（照声色片场：默认跟正文走，可单独配 API）═════════════════════════
@@ -665,8 +666,8 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
     var st = stage(); if (!st) return '<div class="pc-stage"></div>';
     var n = st.mode === 'propose' ? '等 ta 提议' : '第' + ['', '一', '二', '三'][Math.min(3, st.act || 1)] + '幕';
     return '<div class="pc-stage"><span class="dot"></span><b>演出中《' + esc(st.f['片名'] || '') + '》</b><span class="faint">' + esc(n) + '</span><div class="act">' +
-      (st.mode !== 'propose' && (st.act || 1) < 3 ? '<button class="btn sm" data-act="next">下一幕</button>' : '') +
-      '<button class="btn sm pri" data-act="wrap">收工</button></div></div>';
+      (st.mode !== 'propose' && (st.act || 1) < 3 ? '<button class="btn sm" data-act="next">继续</button>' : '') +
+      '<button class="btn sm pri" data-act="wrap">结束</button></div></div>';
   }
   // ── 抽剧本 ──
   function renderDraw() {
@@ -784,12 +785,12 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
   function renderPlayDlg(m) {
     var f = m.f, multi = f['阵容'] && f['阵容'] !== '一男一女', cur = stage();
     var h = '<div class="eb">ACTION</div><h2 class="h">插进正文：《' + esc(f['片名']) + '》</h2>';
-    if (cur) h += '<div class="err" style="margin-bottom:8px">这个聊天正在演《' + esc(cur.f['片名']) + '》，换成这一出会直接顶掉（不发收工）。</div>';
+    if (cur) h += '<div class="err" style="margin-bottom:8px">这个聊天正在演《' + esc(cur.f['片名']) + '》，换成这一出会直接顶掉（不发结束）。</div>';
     h += [['propose', '让 ta 提议', '下一条 ta 借个由头提出来玩这个（' + clip(f['由头'] || '一时兴起', 24) + '），停在等你点头'], ['play', '直接开演', '下一条就已经在戏里了；正打仗这种没法演的时候当平行番外']]
       .map(function (o) { return '<button class="opt' + (m.mode === o[0] ? ' on' : '') + '" data-act="p-mode" data-v="' + o[0] + '"><b>' + o[1] + '</b><span>' + esc(o[2]) + '</span></button>'; }).join('');
     if (multi) h += '<div class="lbl">' + esc(f['阵容']) + '：多出来的人从哪儿来</div>' + FROMS.map(function (o) { return '<button class="opt' + (m.from === o[0] ? ' on' : '') + '" data-act="p-from" data-v="' + o[0] + '"><b>' + o[1] + '</b></button>'; }).join('');
-    h += '<div class="hint" style="margin-top:10px">插进去以后：输入框里有字，等你自己发；空着，直接让 ta 接着写一条。演的时候顶上有「下一幕」「收工」，场记板亮红点。</div>';
-    h += '<div class="act"><button class="btn" data-act="modal-x">算了</button><button class="btn pri" data-act="p-go">开机</button></div>';
+    h += '<div class="hint" style="margin-top:10px">插进去以后：输入框里有字，等你自己发；空着，直接让 ta 接着写一条。演的时候顶上有「继续」「结束」，场记板亮红点。</div>';
+    h += '<div class="act"><button class="btn" data-act="modal-x">算了</button><button class="btn pri" data-act="p-go">开演</button></div>';
     return h;
   }
   var TEMPLATE = '片名：《》\n题材：\n档位：涩涩\n阵容：一男一女\n身份：他演 × 她演\n场景：\n道具：\nXP：\n由头：\n第一幕：\n第二幕：\n第三幕：\n台词：「」「」「」';
@@ -832,7 +833,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
       '<li><b>抽</b>：挑档位（暧昧 / 涩涩 / 重口），想要哪类题材、哪几个 XP 就点，不点就随便抽。身份、场景这几格不喜欢点 ↻ 单独重抽。</li>' +
       '<li><b>扩写或者改</b>：「AI 扩写」写成一页带三幕和台词的小剧本；「改一改」自己动手。都能存进剧本夹。</li>' +
       '<li><b>插进正文</b>：「让 ta 提议」是 ta 借个由头提出来；「直接开演」下一条就在戏里。ta 会带着自己的性格去演——害羞的会笑场，强势的会抢戏。</li>' +
-      '<li><b>演的时候</b>：面板顶上「下一幕」往前推，「收工」从戏里出来，回到原来的故事。场记板上的红点 = 正在演。</li>' +
+      '<li><b>演的时候</b>：不用管，每演几条自己往下走；嫌慢点面板顶上「继续」，想停点「结束」，ta 就从戏里出来，回到原来的故事。场记板上的红点 = 正在演。</li>' +
       '<li><b>广场</b>：发自己的（可以匿名），拿别人的去演，演完晒一句。</li></ol>' +
       '<div class="hint" style="margin-top:10px">场记板拖丢了：快速回复栏点「' + esc(BTN) + '」。</div></div>' +
       '<div class="act"><button class="btn pri" data-act="modal-x">知道了</button></div>';
@@ -867,7 +868,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
       '<div class="row" style="margin-top:10px"><span class="sub">' + (olOff() ? '联机关着：广场看不到。' : '联机开着：用一个匿名马甲，不收账号。') + '</span>' +
       (olOff() ? '<button class="btn sm pri" data-act="ol-on">打开联机</button>' : '<button class="btn sm" data-act="ol-off">关掉联机</button><button class="btn sm ghost" data-act="ol-new">换个新马甲</button>') + '</div></div>';
     h += '<div class="sec"><h4>插进正文</h4><label class="pc-chk"><input type="checkbox" id="mp-set-kick"' + (fv(form, 'kick', pref('kick', true) !== false) ? ' checked' : '') + '> 输入框空着就直接让 ta 接着写一条</label>' +
-      '<div class="hint">关掉的话，插进去 / 收工以后等你自己在输入框里说一句。</div></div>';
+      '<div class="hint">关掉的话，插进去 / 结束以后等你自己在输入框里说一句。</div></div>';
     h += '<div class="sec"><h4>场记板</h4><div class="row"><button class="btn sm" data-act="fab-home">摆回默认位置</button><button class="btn sm" data-act="fab-hide">' + (pref('hideFab', false) ? '显示场记板' : '藏起场记板') + '</button></div>' +
       '<div class="hint">藏起来以后从快速回复栏的「' + esc(BTN) + '」开面板。</div></div>';
     h += '<div class="sec"><h4>其他</h4><div class="row"><button class="btn sm" data-act="tips">再看一遍「怎么玩」</button></div><div class="pc-ver">' + esc(NAME) + ' · ' + esc(V) + ' v' + esc(VERSION) + '</div></div>';
@@ -965,7 +966,7 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
     applyStage(); fabRefresh();
     if (m.sqId) sqPlay(m.sqId);
     closePanel();
-    toast('success', (st.mode === 'propose' ? '下一条 ta 会提议玩《' : '开机：《') + f['片名'] + '》。演的时候点场记板，顶上有「下一幕」「收工」。');
+    toast('success', (st.mode === 'propose' ? '下一条 ta 会提议玩《' : '开演：《') + f['片名'] + '》。会自己往下演；想快点或想停，点场记板「继续」「结束」。');
     await kick(st.mode === 'propose' ? 'ta 就会提议' : '就开演');
   }
   function chatOk() {
@@ -986,9 +987,9 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
   }
   async function nextAct() {
     var st = stage(); if (!st) return;
-    await csave(function (s) { if (s.stage) { s.stage.mode = 'play'; s.stage.act = Math.min(3, (s.stage.act || 1) + 1); } });
+    await csave(function (s) { if (s.stage) { s.stage.mode = 'play'; s.stage.act = Math.min(3, (s.stage.act || 1) + 1); s.stage.actN = 0; } });
     applyStage(); render(); fabRefresh();
-    toast('success', '下一幕：第' + ['', '一', '二', '三'][stage().act] + '幕。下一条回复往前推。');
+    toast('success', '继续：第' + ['', '一', '二', '三'][stage().act] + '幕。下一条回复往前推。');
   }
   async function wrapStage() {
     var st = stage(); if (!st) return;
@@ -996,23 +997,27 @@ var MINI_GRID = {"tiers":["暧昧","涩涩","重口"],"themes":[{"name":"制服"
     try { uninjectPrompts([ID_STAGE]); } catch (e) {}
     try { injectPrompts([{ id: ID_WRAP, position: 'in_chat', depth: 1, role: 'system', content: wrapText(st.f), should_scan: false }], { once: true }); } catch (e) {}
     fabRefresh(); closePanel();
-    toast('success', '收工：《' + st.f['片名'] + '》。' + (st.sqId ? '演得怎么样？去广场给它晒一句。' : ''));
+    toast('success', '结束：《' + st.f['片名'] + '》。' + (st.sqId ? '演得怎么样？去广场给它晒一句。' : ''));
     await kick('ta 就从戏里出来');
   }
-  // 正文回了一条：提议那条回完就转成开演（第一幕）；演了很久提醒一次收工
-  var LAST_GEN_AT = 0;
-  async function onReceived() {
+  // 正文回了一条：提议那条回完就转成开演（第一幕）；演了很久提醒一次可以结束
+  // v0.1.3：不点「继续」也往下走，一幕演 ACT_AUTO 条自动进下一幕（重抽 / 续写不算）；第三幕一直演到玩家点「结束」
+  var LAST_GEN_AT = 0, ACT_AUTO = 3, NO_COUNT = { swipe: 1, regenerate: 1, 'continue': 1 };
+  async function onReceived(mesId, type) {
     var st = stage(); if (!st) return;
     if (Date.now() - LAST_GEN_AT < 800) return; LAST_GEN_AT = Date.now();
     var remind = false;
     await csave(function (s) {
       var x = s.stage; if (!x) return;
       x.n = (x.n || 0) + 1;
-      if (x.mode === 'propose') { x.mode = 'play'; x.act = 1; }
+      if (x.mode === 'propose') { x.mode = 'play'; x.act = 1; x.actN = 0; return; }
+      if (NO_COUNT[type]) return;
+      x.actN = (x.actN || 0) + 1;
+      if ((x.act || 1) < 3 && x.actN >= ACT_AUTO) { x.act = (x.act || 1) + 1; x.actN = 0; }
       if (x.n === 12) remind = true;
     });
     applyStage(); fabRefresh(); if (PANEL.classList.contains('open')) render();
-    if (remind) toast('info', '《' + st.f['片名'] + '》演了十几条了。演完了就点场记板「收工」，回到原来的故事。');
+    if (remind) toast('info', '《' + st.f['片名'] + '》演了十几条了。想回到原来的故事，点场记板「结束」。');
   }
   function onChatChanged() {
     UI.modal = null; try { uninjectPrompts([ID_WRAP]); } catch (e) {}
